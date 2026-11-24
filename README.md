@@ -67,10 +67,13 @@ worker 使用固定参数 `DBSCAN(eps=26m, min_samples=3)` 对同一测量批次
 
 ```text
 backend/src/models.py                 领域表与关联
+backend/src/services/settlement.py    沉降超限判定、原尺度成片、预警与更正
 backend/src/services/cluster.py       DBSCAN 与局部密度评分
 backend/src/main.py                   认证、领域路由、状态规则
+backend/src/operations_settlement.py  沉降预警与更正核验视图
 backend/scripts/seed_demo.py           幂等演示数据
 frontend/src/app.js                   四个业务页面与交互
+frontend/src/settlement.js            热区页面的沉降成片与预警工作台
 frontend/src/api/client.js             API 封装
 frontend/src/styles.css                市政测绘图板视觉系统
 test-artifacts/gb-1070/                验收脚本、截图与追踪文档
@@ -95,6 +98,24 @@ Internal evaluation artifact.
 ### 二次扩展核验
 
 - **测量坐标系入簇预检** 逐点比对来源坐标系与测量批声明，并列明质检或未入簇原因，避免异坐标点进入维修片区。
+- **沉降超限成片核对** 按测点上下限与测量误差复核必超限/可能超限分片，标明未成片点位的原因。
+- **道路预警与更正依据** 核对已签发预警的生效版本、每次重算触发的更正单、范围增减点位。
+
+## 沉降超限、道路预警与更正
+
+热区页面新增「沉降超限 / 道路预警」工作台，把"读数刚过线"和"必超限"分开处置：
+
+- **测点录入上下限**：每个测点可单独填 `沉降下限 / 上限 / 测量误差`；留空时上限回落到批次警戒线 `warning_limit_mm`（默认 12.0 mm），误差回落到批次 `default_tolerance_mm`（默认 0.5 mm）。批次警戒线与默认误差也可在页面或 `PUT /api/survey-batches/{id}/limits` 调整。
+- **判定口径**：`settlement > 上限` 为超限；算上误差仍超限（`读数 - 误差 > 上限`，下限方向为 `读数 + 误差 < 下限`）才是**必超限**，否则是**可能超限**。坐标基准与批次不一致的点不参与成片。
+- **原尺度双片**：必超限与可能超限各出一张 SVG 成片。两张片共用同一批次的原点与 `px/m` 比例，可直接叠合；成片承载测点、井盖、读数、上下限与道路标注，`GET /api/settlement-plates/{id}/image.svg` 可单独取图。
+- **只有必超限成片能签发道路预警**；可能超限成片留待复测，不进入预警。
+- **签发与订正并发**：
+  - 先订正（读数或上下限，批次标脏）→ 签发被拒（`409 SETTLEMENT_PENDING_RECOMPUTE`），必须先重算。
+  - 先签发 → 保留原预警单；之后订正并重算，若必超限范围变化则自动生成更正单（`expanded / reduced / replaced / cleared`），原单不覆盖。
+  - 更正单按 `(预警, 重算版本)` 与幂等键去重，重试不重复签发。
+- **热区页面**：可订正读数、改上下限、重算、签发预警、查看预警与更正依据、接收更正单；每张热区卡片显示必超限/待复测点数及对应预警、更正单号。
+
+`POST /api/survey-batches/{id}/settlement/recompute` 手动重算；聚类完成后 worker 也会自动重算一版。每次重算写入 `SettlementRun`（版本、触发方式、逐点判定、汇总）与两张 `SettlementPlate`，预警与更正分别落 `RoadWarning`、`WarningCorrection`。
 
 ## 专项业务核对
 

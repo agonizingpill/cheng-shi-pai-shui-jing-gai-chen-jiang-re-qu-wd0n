@@ -8,7 +8,7 @@ RECONCILIATION_VIEWS = {
         """
 SELECT b.batch_code,p.point_code,b.coordinate_reference,p.coordinate_reference,p.quality_status,p.cluster_label,
        CASE WHEN p.coordinate_reference<>b.coordinate_reference THEN '坐标系不一致，待转换'
-            WHEN p.quality_status NOT IN ('clustered','datum_corrected','unchecked') THEN '复核点位质检状态'
+            WHEN p.quality_status NOT IN ('clustered','datum_corrected','unchecked','checked','reading_corrected') THEN '复核点位质检状态'
             WHEN p.quality_status='clustered' AND p.cluster_label IS NULL THEN '有效离群点，现场复核'
             WHEN p.cluster_label IS NULL THEN '待入簇'
             ELSE '已记录入簇结果' END

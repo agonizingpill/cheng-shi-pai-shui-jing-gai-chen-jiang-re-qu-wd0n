@@ -82,6 +82,16 @@ def cluster_batch(db, job_id):
         batch.status = "clustered"
         job.result = {"algorithm": "DBSCAN + local density score", "eps_m": EPS_METERS, "min_samples": MIN_SAMPLES, "cluster_count": cluster_count, "noise_count": noise_count, "conflicted_zones": conflicts, "point_count": len(points), "formula": "local_density = cluster_points / bbox_area × 10000"}
         job.status = "succeeded"; job.finished_at = datetime.now(timezone.utc)
+        # 聚类完成即按测点上下限与误差重算沉降成片；已签发预警时范围变化会自动转更正单
+        from .settlement import create_run
+        settlement_run, plates, correction = create_run(db, batch, trigger="cluster")
+        job.result = {
+            **(job.result or {}),
+            "settlement_revision": settlement_run.revision,
+            "certain_points": settlement_run.summary.get("certain", 0),
+            "possible_points": settlement_run.summary.get("possible", 0),
+            "warning_correction": correction.correction_code if correction else None,
+        }
         db.commit()
     except Exception as exc:
         job.status = "failed"; job.error = str(exc); job.finished_at = datetime.now(timezone.utc); db.commit()

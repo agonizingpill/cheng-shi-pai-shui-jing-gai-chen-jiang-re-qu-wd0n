@@ -17,3 +17,11 @@ export const acknowledgeNotice=id=>api(`/work-notices/${id}/acknowledge`,{method
 export const startRepair=id=>api(`/zones/${id}/start-repair`,{method:'POST'});
 export const submitResurvey=(id,payload)=>api(`/zones/${id}/resurvey`,{method:'POST',body:JSON.stringify(payload)});
 export const verifyResurvey=id=>api(`/resurveys/${id}/verify`,{method:'POST'});
+export const saveBatchLimits=(id,payload)=>api(`/survey-batches/${id}/limits`,{method:'PUT',body:JSON.stringify(payload)});
+export const savePointLimits=(id,payload)=>api(`/survey-points/${id}/limits`,{method:'PUT',body:JSON.stringify(payload)});
+export const correctReading=(id,payload)=>api(`/survey-points/${id}/reading`,{method:'PUT',body:JSON.stringify(payload)});
+export const recomputeSettlement=id=>api(`/survey-batches/${id}/settlement/recompute`,{method:'POST'});
+export const loadSettlement=id=>api(`/survey-batches/${id}/settlement`);
+export const issueWarning=(id,payload)=>api(`/survey-batches/${id}/warnings`,{method:'POST',body:JSON.stringify(payload||{})});
+export const issueCorrection=(id,payload)=>api(`/road-warnings/${id}/corrections`,{method:'POST',body:JSON.stringify(payload||{})});
+export const acknowledgeCorrection=id=>api(`/warning-corrections/${id}/acknowledge`,{method:'POST'});

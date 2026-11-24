@@ -2,9 +2,12 @@
 
 from .operations_reconciliation import RECONCILIATION_VIEWS
 
+from .operations_settlement import SETTLEMENT_VIEWS
+
 from .road_reopening import VIEW as ROAD_REOPENING
 
 VIEWS = {
+    **SETTLEMENT_VIEWS,
     'permit-coordination': (
         '道路施工许可对照',
         '比较同道路、非撤销的封道许可时段，列出每项通知许可缺口和并发通行冲突，供排班避让。',

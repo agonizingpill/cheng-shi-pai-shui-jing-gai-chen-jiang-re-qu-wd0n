@@ -13,6 +13,36 @@ def get_or_create(db, model, where, values):
         return row, False
     row = model(**where, **values); db.add(row); db.flush(); return row, True
 
+# 每个测点的沉降上限（mm）、下限（mm，None 表示不设）与测量误差（mm）。
+# 第一批是南河路（1-10）、西环路（11-20）。读数故意分布在警戒线 12.0 mm 两侧：
+#   * 13.9 等明显超线且读数减误差仍在线上的，纳入必超限成片；
+#   * 12.3 这类刚过线、减去误差回到线内的，纳入可能超限成片，等待复测。
+POINT_PROFILE = {
+    1: (8.6, 0.5),
+    2: (10.3, 0.5),
+    3: (12.3, 1.0),   # 刚过线，误差 ±1.0 → 可能超限
+    4: (11.8, 0.5),
+    5: (9.7, 0.4),
+    6: (8.9, 0.5),
+    7: (11.2, 0.6),
+    8: (10.8, 0.5),
+    9: (12.4, 0.8),   # 刚过线，误差 ±0.8 → 可能超限
+    10: (9.5, 0.5),
+    11: (13.9, 0.5),
+    12: (15.7, 0.6),
+    13: (13.4, 0.4),
+    14: (16.2, 0.7),
+    15: (14.8, 0.5),
+    16: (12.5, 0.9),  # 刚过线，误差 ±0.9 → 可能超限
+    17: (17.5, 0.5),
+    18: (15.1, 0.5),
+    19: (13.6, 0.6),
+    20: (14.7, 0.5),  # 基准冲突点，先排除成片
+}
+
+WARNING_LIMIT_MM = 12.0
+DEFAULT_TOLERANCE_MM = 0.5
+
 def seed():
     Base.metadata.create_all(engine)
     db = SessionLocal()
@@ -33,13 +63,22 @@ def seed():
                 street = "西环路"
             asset, _ = get_or_create(db, ManholeAsset, {"asset_code": f"MH-{i:03d}"}, {"street_name": street, "x": x, "y": y, "coordinate_reference": "WGS84-METER", "cover_type": "球墨铸铁" if i % 2 else "复合井盖", "depth_mm": 2100 + i * 12, "status": "active", "last_inspected_at": dt(20, 7)})
             assets.append(asset)
-        batch, _ = get_or_create(db, SurveyBatch, {"batch_code": "SURV-2026-1121-AM"}, {"measured_at": dt(21, 7, 30), "instrument": "Leica MS60 / RUN-1121-AM", "coordinate_reference": "WGS84-METER", "status": "open", "notes": "南河路与西环路交界区晨间复测"})
+        batch, created = get_or_create(db, SurveyBatch, {"batch_code": "SURV-2026-1121-AM"}, {"measured_at": dt(21, 7, 30), "instrument": "Leica MS60 / RUN-1121-AM", "coordinate_reference": "WGS84-METER", "status": "open", "notes": "南河路与西环路交界区晨间复测", "warning_limit_mm": WARNING_LIMIT_MM, "default_tolerance_mm": DEFAULT_TOLERANCE_MM})
+        if created:
+            batch.warning_limit_mm = WARNING_LIMIT_MM
+            batch.default_tolerance_mm = DEFAULT_TOLERANCE_MM
         points = db.execute(select(SurveyPoint).where(SurveyPoint.batch_id == batch.id)).scalars().all()
         if not points:
             for i, asset in enumerate(assets, 1):
-                settlement = round(9.4 + (i % 4) * 1.7, 2) if i <= 10 else round(13.0 + (i % 5) * 1.9, 2)
+                settlement, tolerance = POINT_PROFILE[i]
                 ref = "CGCS2000" if i == 20 else "WGS84-METER"
-                db.add(SurveyPoint(point_code=f"SP-1121-{i:02d}", batch_id=batch.id, manhole_id=asset.id, x=asset.x, y=asset.y, elevation_mm=round(101230.0 - settlement, 2), settlement_mm=settlement, coordinate_reference=ref, measured_at=dt(21, 7, 30), quality_status="datum_conflict" if i == 20 else "checked"))
+                db.add(SurveyPoint(
+                    point_code=f"SP-1121-{i:02d}", batch_id=batch.id, manhole_id=asset.id, x=asset.x, y=asset.y,
+                    elevation_mm=round(101230.0 - settlement, 2), settlement_mm=settlement,
+                    limit_lower_mm=None, limit_upper_mm=WARNING_LIMIT_MM, tolerance_mm=tolerance,
+                    coordinate_reference=ref, measured_at=dt(21, 7, 30),
+                    quality_status="datum_conflict" if i == 20 else "checked",
+                ))
         supervisor = db.execute(select(User).where(User.username == "supervisor")).scalar_one()
         get_or_create(db, WorkNotice, {"notice_code": "WN-XH-20261121"}, {"zone_id": None, "road_name": "西环路雨污分流施工段", "contractor": "城建二公司市政一队", "permit_no": "SG-2026-XH-041", "starts_at": dt(21, 8), "ends_at": dt(25, 18), "boundary": {"min_x": 1098, "max_x": 1155, "min_y": 1968, "max_y": 2020}, "status": "active", "lane_closure_required": True, "conflict_note": "施工围挡占用西环路北侧慢车道", "created_by": supervisor.id})
         db.commit()
